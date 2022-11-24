@@ -1,0 +1,8 @@
+jtype: ClassifireExecutor
+py_modules:
+  - ./jina_executor.py
+metas:
+  name: ClassifireExecutor
+  description: Executor for Classifire image to image classifier
+  url: https://github.com/peterwilli/classifire
+  keywords: ['classifier', 'images', 'compviz']

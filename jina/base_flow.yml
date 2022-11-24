@@ -1,0 +1,8 @@
+jtype: Flow
+version: '1'
+with:
+  port: 8008
+  protocol: grpc
+executors:
+- name: ClassifireExecutor
+  uses: jinahub+docker://ClassifireExecutor/latest

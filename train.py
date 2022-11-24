@@ -19,7 +19,7 @@ from pytorch_lightning.callbacks import LearningRateMonitor
 
 def parse_args(args=None):
     parser = argparse.ArgumentParser()
-    parser.add_argument("--batch_size", type=int, default=4)
+    parser.add_argument("--batch_size", type=int, default=24)
     parser.add_argument("--learning_rate", type=float, default=1e-4)
     parser.add_argument("--weight_decay", type=float, default=0.0001)
     parser.add_argument("--patch_size", type=int, default=16)
@@ -35,7 +35,9 @@ def parse_args(args=None):
 def get_datamodule(batch_size: int):
     train_transforms = transforms.Compose(
         [
-            iaa.Sequential([
+            iaa.Resize({"shorter-side": (64, 128), "longer-side": "keep-aspect-ratio"}).augment_image,
+            iaa.CropToFixedSize(width=64, height=64).augment_image,
+            iaa.Sometimes(0.6, iaa.Sequential([
                 iaa.flip.Fliplr(p=0.5),
                 iaa.flip.Flipud(p=0.5),
                 iaa.Sometimes(
@@ -45,10 +47,20 @@ def get_datamodule(batch_size: int):
                         iaa.ShearY((-20, 20))
                     ])
                 ),
+                iaa.Sometimes(0.2, iaa.OneOf([
+                    iaa.Dropout((0.01, 0.1), per_channel=0.5),
+                    iaa.CoarseDropout(
+                        (0.03, 0.15), size_percent=(0.02, 0.05),
+                        per_channel=0.2
+                    ),
+                ])),
+                iaa.Grayscale(alpha=(0.0, 1.0)),
+                iaa.Sometimes(0.2, iaa.Emboss(alpha=(0.0, 1.0), strength=(0.5, 1.5))),
+                iaa.MultiplyHueAndSaturation((0.5, 1.5), per_channel=True),
                 iaa.GaussianBlur(sigma=(0.0, 0.05)),
                 iaa.MultiplyBrightness(mul=(0.65, 1.35)),
                 iaa.AdditiveGaussianNoise(loc=0, scale=(0.0, 0.05*255), per_channel=0.5),
-            ], random_order=True).augment_image,
+            ], random_order=True)).augment_image,
             np.copy,
             transforms.ToTensor(),
             transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))
@@ -56,6 +68,8 @@ def get_datamodule(batch_size: int):
     )
     test_transforms = transforms.Compose(
         [
+            iaa.Resize({"shorter-side": (64, 128), "longer-side": "keep-aspect-ratio"}).augment_image,
+            iaa.CropToFixedSize(width=64, height=64).augment_image,
             transforms.ToTensor(),
             transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))
         ]
@@ -67,13 +81,12 @@ def get_datamodule(batch_size: int):
             self.files = os.listdir(self.path)
             self.transform = transform
             self.num_images = 2
-        
+
         def _images_from_paths(self, paths):
             images = None
             for path in paths:
                 image = Image.open(path).convert("RGB")
                 image = ImageOps.exif_transpose(image)
-                image = image.resize((64, 64))
                 image = self.transform(np.array(image)).unsqueeze(0)
                 if images is None:
                     images = image
@@ -91,7 +104,10 @@ def get_datamodule(batch_size: int):
             images_path = os.path.join(full_path, "concept_images")
             image_names = os.listdir(images_path)
             random.shuffle(image_names)
+            against_itself = random.randint(0, 1) > 0.8
             image_names = image_names[:self.num_images]
+            if against_itself:
+                image_names = [image_names[0]] * self.num_images
             image_names_len = len(image_names)
             if image_names_len < self.num_images:
                 for i in range(self.num_images - image_names_len):
@@ -157,9 +173,22 @@ def get_datamodule(batch_size: int):
     
     return dm
 
+def test_train_images(dm):
+    train_loader = dm.train_dataloader()
+    count = 0
+    transform = transforms.ToPILImage()
+    for batch, _ in train_loader:
+        for i in range(batch.shape[0]):
+            image = batch[i, 0, ...]
+            pil_image = transform(image)
+            pil_image.save(f"test_{count}.png")
+            count += 1
+            if count > 100:
+                return
+
 if __name__ == "__main__":
     torch.autograd.set_detect_anomaly(True)
-    pl.seed_everything(1)
+    pl.seed_everything(2)
     args = parse_args()
     
     # Add some dm attributes to args Namespace
@@ -170,14 +199,17 @@ if __name__ == "__main__":
     # compute total number of steps
     batch_size = args.batch_size * args.gpus if args.gpus > 0 else args.batch_size
     dm = get_datamodule(batch_size = batch_size)
+    # test_train_images(dm)
     args.steps = dm.num_samples // batch_size * args.max_epochs
     
     # Init Lightning Module
-    lm = LM(**vars(args))
+    lm = Classifire.load_from_checkpoint("lightning_logs/version_1/checkpoints/epoch=4999-step=75000.ckpt")
+    # lm = Classifire(**vars(args))
     lm.train()
     # early_stop_callback = pl.callbacks.EarlyStopping(monitor="val_loss", patience=10)
     lr_monitor = LearningRateMonitor(logging_interval='step')
     args.callbacks = [lr_monitor]
+    args.log_every_n_steps = 10
 
     # Init callbacks
     if args.enable_logging:

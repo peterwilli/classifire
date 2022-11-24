@@ -34,23 +34,23 @@ class Classifire(pl.LightningModule):
         feature_layers = [
             nn.Sequential(
                 nn.Conv2d(3, 32, kernel_size=3, stride=1, padding=1),
-                nn.ReLU(),
+                nn.LeakyReLU(),
                 nn.Dropout(p=dropout_p)
             ),
             nn.Sequential(
                 nn.Conv2d(32, 32, kernel_size=3, stride=2, padding=1),
-                nn.ReLU(),
+                nn.LeakyReLU(),
                 nn.MaxPool2d(kernel_size=2, stride=1),
                 nn.Dropout(p=dropout_p)
             ),
             nn.Sequential(
                 nn.Conv2d(32, 64, kernel_size=3, stride=2, padding=1),
-                nn.ReLU(),
+                nn.LeakyReLU(),
                 nn.Dropout(p=dropout_p)
             ),
             nn.Sequential(
                 nn.Conv2d(64, 64, kernel_size=3, stride=2, padding=1),
-                nn.ReLU(),
+                nn.LeakyReLU(),
                 nn.MaxPool2d(kernel_size=2, stride=1),
                 nn.Dropout(p=dropout_p)
             )
@@ -58,13 +58,13 @@ class Classifire(pl.LightningModule):
         self.features = nn.Sequential(*feature_layers)
         n_sizes = self._get_conv_output(input_shape)
         output_layers = [
-            nn.Linear(n_sizes, 2048),
-            nn.ReLU(),
+            nn.Linear(n_sizes, 1024),
+            nn.LeakyReLU(),
             nn.Dropout(p=dropout_p),
-            nn.Linear(2048, 2048),
-            nn.ReLU(),
+            nn.Linear(1024, 512),
+            nn.LeakyReLU(),
             nn.Dropout(p=dropout_p),
-            nn.Linear(2048, 2),
+            nn.Linear(512, 2),
             nn.LogSoftmax(dim=1)
         ]
         self.accuracy = torchmetrics.Accuracy()
@@ -74,7 +74,6 @@ class Classifire(pl.LightningModule):
     def _get_conv_output(self, shape):
         batch_size = 1
         input = torch.autograd.Variable(torch.rand(batch_size, *shape))
-
         output_feat = self.features(input)
         print("output_feat", output_feat.shape)
         n_size = output_feat.data.view(batch_size, -1).size(1)
@@ -82,12 +81,14 @@ class Classifire(pl.LightningModule):
         return n_size
         
     def forward(self, x):
-        # TODO: add linspace for sin and cos, random crop maybe?
         x_l = x[:, 0, ...]
         x_r = x[:, 1, ...]
-        x_l = self.features(x_l)
-        x_r = self.features(x_r)
-        x = (torch.maximum(x_l, x_r)).view(x.size(0), -1)
+        x_l = self.features(x_l).view(x.size(0), -1)
+        x_r = self.features(x_r).view(x.size(0), -1)
+        linspace = torch.linspace(0, 1, x_l.shape[1], device = self.device)
+        x_l = x_l * torch.sin(linspace)
+        x_r = x_r * torch.cos(linspace)
+        x = torch.maximum(x_l, x_r)
         x = self.output(x)
         return x
 
@@ -143,5 +144,5 @@ class Classifire(pl.LightningModule):
                     output.write(source)
 
     def on_train_start(self):
-        self.log_sources(['leap_module.py'])
+        self.log_sources(['model.py'])
         

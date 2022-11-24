@@ -1,6 +1,5 @@
 data/
 __pycache__/
 lightning_logs/
-.venv/
 *.ckpt
 *.onnx

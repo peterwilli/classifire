@@ -40,14 +40,13 @@ def main():
     images = images.unsqueeze(0) # Simulate batch
     print("images", images.shape)
 
-    # Loading LEAP from checkpoint
-    leap = LM.load_from_checkpoint("model.ckpt")
-    leap.eval()
+    classifire = Classifire.load_from_checkpoint("model.ckpt")
+    classifire.eval()
 
-    logits = leap(images)
-    print(f"familiarity: {logits[0][1]:.6f}")
-    # preds = torch.argmax(logits, dim=1)
-    is_detected = logits[0][1] > -11
+    logits = classifire(images)
+    print(f"logits: {logits}")
+    preds = torch.argmax(logits, dim=1)
+    is_detected = preds == 1
     print(f"Detected same object: {is_detected}")
 
 if __name__ == "__main__":
